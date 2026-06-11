@@ -1,0 +1,60 @@
+name: Produkt-feed (Shopify JSON)
+
+# Kører hver 3. time + kan startes manuelt
+on:
+  schedule:
+    # Minut :12 (skævt klokkeslæt) hver 3. time, i UTC. 8 kørsler/døgn.
+    - cron: "12 */3 * * *"
+  workflow_dispatch: {}
+
+# Rettigheder der skal til for at udgive via GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Sørg for at kun én udgivelse kører ad gangen
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Hent koden
+        uses: actions/checkout@v4
+
+      - name: Opsæt Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Hent kilde-feed fra Cykelexperten
+        env:
+          FEED_URL: ${{ secrets.FEED_URL }}
+        run: |
+          curl -sSL --fail --retry 3 "$FEED_URL" -o feed.xml
+          echo "Hentet feed:"; ls -lh feed.xml
+
+      - name: Transformér til Shopify products.json
+        run: |
+          mkdir -p _site
+          python transform_tradetracker.py feed.xml _site/products.json
+          gzip -kf _site/products.json
+          # Bed søgemaskiner om ikke at indeksere (virker ved eget domæne;
+          # for *.github.io skal host-rod-robots.txt også sættes, se vejledning)
+          printf 'User-agent: *\nDisallow: /\n' > _site/robots.txt
+          echo "Færdige filer:"; ls -lh _site
+
+      - name: Upload til Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Udgiv på GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
