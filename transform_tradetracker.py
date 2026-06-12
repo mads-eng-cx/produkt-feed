@@ -4,9 +4,8 @@ Renser Cykelexpertens TradeTracker-feed (RSS/Google Shopping, <item>-elementer)
 til Shopify 'products.json'-format - et produkt pr. g:item_group_id, varianter
 samlet indeni. Til brug som AI-chat-feed.
 
-VIGTIGT: Intet originaldata udelades. Hver variant beholder de paene Shopify-felter
-PLUS et komplet 'source'-objekt med ALLE oprindelige felter (bikedeskStock,
-availableStock, fjernlager, Varetype, Koen, Aarstid, alle properties osv.).
+Hver variant beholder de paene Shopify-felter PLUS et 'source'-objekt med de
+oprindelige felter. Felter i EXCLUDE_FIELDS udelades helt fra output.
 Felter der optraeder flere gange i et item bevares som lister.
 
 Gruppering:
@@ -27,6 +26,9 @@ import xml.etree.ElementTree as ET
 _TAG_RE = re.compile(r'<[^>]+>')
 _WS_RE = re.compile(r'\s+')
 _NUM_RE = re.compile(r'[\d]+(?:[.,]\d+)?')
+
+# Felter der IKKE maa komme med i output-feedet (hverken Shopify-felt eller source)
+EXCLUDE_FIELDS = {'google_product_category', 'tags', 'bikedeskStock'}
 
 
 def local(tag):
@@ -124,9 +126,6 @@ def build_product(group_id, items, feed_ts):
     pid = stable_id(group_id or first(rep.get('id')) or first(rep.get('ShopwareID')))
     title = product_title(rep)
 
-    tags = [t.strip() for t in first(rep.get('tags', '')).split(',') if t.strip()]
-    tags = list(dict.fromkeys(tags))
-
     has_color = any(color_of(v) for v in items)
     has_size = any(size_of(v) for v in items)
     dims = []
@@ -181,7 +180,7 @@ def build_product(group_id, items, feed_ts):
             'product_id': pid,
             'created_at': feed_ts,
             'updated_at': feed_ts,
-            'source': v,
+            'source': {k: val for k, val in v.items() if k not in EXCLUDE_FIELDS},
         })
 
     return {
@@ -194,7 +193,6 @@ def build_product(group_id, items, feed_ts):
         'updated_at': feed_ts,
         'vendor': first(rep.get('brand', '')),
         'product_type': first(rep.get('product_type', '')),
-        'tags': tags,
         'variants': out_variants,
         'images': img_objs,
         'options': options,
